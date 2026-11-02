@@ -106,3 +106,9 @@ Provided you configured everything correctly, you should be able to click on `AP
 ## How to report issues
 
 Open an issue on GitHub or contact loomeh on Discord
+
+---
+
+## Credits
+
+[GipSyntheticEx](https://github.com/InvoxiPlayGames/GipSyntheticEx) by InvoxiPlayGames
