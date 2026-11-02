@@ -7,7 +7,7 @@ APM3 To XInput is a project that attempts to remap arcade stick inputs from Sega
 
 ## Prerequisites
 
-- Modern version of Windows 10/11
+- Windows 10 1803 or newer
 - [HidHide](https://github.com/nefarius/HidHide/releases)
 - Administrator access (this is needed to create the virtual XInput pads)
 
