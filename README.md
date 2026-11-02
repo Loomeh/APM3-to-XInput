@@ -1,6 +1,6 @@
 # APM3 To XInput
 
-APM3 To XInput is a project that attempts to remap arcade stick inputs from Sega's proprietary I/O boards used in the ALL.Net P-ras 3 arcade cabinets to standard XInput to improve their compatibility with PC games and emulators.
+APM3 To XInput is a project that attempts to remap arcade stick inputs from Sega's proprietary I/O boards used in the ALL.Net P-ras MULTI version 3 arcade cabinets to standard XInput to improve their compatibility with PC games and emulators.
 
 > [!WARNING]
 > This has currently not been tested on real APM3/ALLS hardware.
