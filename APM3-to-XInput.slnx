@@ -1,0 +1,7 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="APM3-to-XInput/APM3-to-XInput.vcxproj" Id="07e9fa4e-216a-4453-b7d9-628c0892753e" />
+</Solution>

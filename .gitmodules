@@ -1,0 +1,6 @@
+[submodule "APM3-to-XInput/GipSyntheticEx"]
+	path = APM3-to-XInput/GipSyntheticEx
+	url = https://github.com/InvoxiPlayGames/GipSyntheticEx
+[submodule "APM3-to-XInput/third_party/minhook"]
+	path = APM3-to-XInput/third_party/minhook
+	url = https://github.com/TsudaKageyu/minhook
