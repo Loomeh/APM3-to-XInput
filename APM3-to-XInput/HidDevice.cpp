@@ -5,6 +5,11 @@
 #include <hidusage.h>
 #include <string.h>
 
+// Missing from older and MinGW copies of hidusage.h
+#ifndef HID_USAGE_GENERIC_MULTI_AXIS_CONTROLLER
+#define HID_USAGE_GENERIC_MULTI_AXIS_CONTROLLER ((USAGE)0x08)
+#endif
+
 #pragma comment(lib, "hid.lib")
 #pragma comment(lib, "setupapi.lib")
 

@@ -1,5 +1,5 @@
 #pragma once
-// A virtual Xbox One gamepad that shows up to games through XInput.
+// A virtual Xbox 360 gamepad, created through ViGEmBus, that shows up to games through XInput.
 //
 //   VirtualController pad;                      // created and plugged in
 //   pad.Press(Button::A | Button::LB);          // input is sent immediately
@@ -8,19 +8,14 @@
 //   pad.SetRightTrigger(65535);
 //                                               // unplugged when pad goes out of scope
 //
-// The process must run as administrator with Windows Developer Mode turned on.
+// The ViGEmBus driver must be installed (https://github.com/nefarius/ViGEmBus/releases).
 // All failures throw VirtualControllerError.
 //
-// The constructor blocks for about half a second, because sending input before
-// Windows has registered a new controller can crash the process. Create
-// controllers at startup, not somewhere that can't afford the wait.
+// The constructor blocks briefly so Windows can finish registering the new
+// controller before input arrives. Create controllers at startup.
 //
 // XInput has four slots. A controller beyond that is created without an error
-// but its input goes nowhere, and nothing here can detect that.
-//
-// Do not call XInput in the same process as a VirtualController: while polling,
-// XInput's I/O reached xboxgipsynthetic.dll's worker threads and crashed the
-// process. Read XInput from a separate process instead (see XInputObserver.h).
+// but its input goes nowhere.
 #include <Windows.h>
 #include <stdexcept>
 
@@ -46,8 +41,8 @@ constexpr Button operator|(Button a, Button b) { return (Button)((USHORT)a | (US
 constexpr Button operator&(Button a, Button b) { return (Button)((USHORT)a & (USHORT)b); }
 constexpr Button operator~(Button a) { return (Button)(~(USHORT)a); }
 
-// The complete state of the gamepad. This is also the report format
-// xboxgipsynthetic.dll expects, so the layout must not change.
+// The complete state of the gamepad. Buttons use the Xbox One bit layout above;
+// VirtualController converts to the Xbox 360 (XUSB) layout for ViGEm.
 #pragma pack(push, 1)
 struct GamepadState {
 	Button buttons = Button::None;
@@ -96,7 +91,9 @@ public:
 private:
 	void Close() noexcept;
 
-	ULONGLONG handle_ = 0;
+	static const DWORD SETTLE_TIME_MS = 200;
+
+	void* target_ = nullptr;  // PVIGEM_TARGET
 	bool open_ = false;
 	GamepadState state_;
 };
