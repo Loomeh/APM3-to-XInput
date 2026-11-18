@@ -78,6 +78,17 @@ POKKEN CONTROLLER
  buttons 1-14,15, axes Rz Z Y X, hat
 ```
 
+### Plugging controllers into a USB port
+
+A section can also have a `Port=`. Whatever controller is plugged into that USB port gets mixed into the same virtual controller as the section's `Device=` (a section can also have only a `Port=`). To find the port, run `ports.bat` or `APM3-to-XInput.exe --ports`, plug something into the port, and copy the line it prints:
+
+```text
+Controller
+  Port=PCIROOT(0)#PCI(0201)#PCI(0000)#PCI(0C00)#PCI(0000)#USBROOT(0)#USB(8)
+```
+
+Only controllers that SDL recognizes, either from its own list or from `gamecontrollerdb.txt` next to the exe, are used. Anything else plugged into the port, like a keyboard, is ignored and works as normal. Buttons are matched by position, so the bottom face button is always A. Games can still see the plugged-in controller directly as well.
+
 ### Finding button values
 
 Button values can be found by searching "Set up USB game controllers" in the Windows start menu, clicking on a controller, and seeing what physical button presses light up which values.
@@ -104,6 +115,12 @@ Provided you configured everything correctly, you should be able to click on `AP
 
 ---
 
+## How to build
+
+Clone with `--recurse-submodules`, run `vcpkg integrate install` once so Visual Studio can fetch SDL3 from `vcpkg.json`, then build the solution. `SDL3.dll`, `gamecontrollerdb.txt` and `ports.bat` are copied next to the exe and need to ship with it.
+
+---
+
 ## How to report issues
 
 Open an issue on GitHub or contact loomeh on Discord
@@ -113,3 +130,7 @@ Open an issue on GitHub or contact loomeh on Discord
 ## Credits
 
 [GipSyntheticEx](https://github.com/InvoxiPlayGames/GipSyntheticEx) by InvoxiPlayGames
+
+[ViGEmClient](https://github.com/nefarius/ViGEmClient) by Nefarius Software Solutions
+
+[SDL](https://libsdl.org) and [SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)

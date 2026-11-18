@@ -4,3 +4,6 @@
 [submodule "APM3-to-XInput/third_party/minhook"]
 	path = APM3-to-XInput/third_party/minhook
 	url = https://github.com/TsudaKageyu/minhook
+[submodule "APM3-to-XInput/third_party/ViGEmClient"]
+	path = APM3-to-XInput/third_party/ViGEmClient
+	url = https://github.com/nefarius/ViGEmClient
