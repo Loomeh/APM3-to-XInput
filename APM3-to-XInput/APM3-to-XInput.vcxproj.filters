@@ -36,25 +36,10 @@
     <ClCompile Include="VirtualController.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GipSyntheticEx\ExportedAPI.cpp">
-      <Filter>Third Party</Filter>
+    <ClCompile Include="UsbPort.cpp">
+      <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="GipSyntheticEx\GipSyntheticHooks.cpp">
-      <Filter>Third Party</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\minhook\src\buffer.c">
-      <Filter>Third Party</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\minhook\src\hook.c">
-      <Filter>Third Party</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\minhook\src\trampoline.c">
-      <Filter>Third Party</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\minhook\src\hde\hde32.c">
-      <Filter>Third Party</Filter>
-    </ClCompile>
-    <ClCompile Include="third_party\minhook\src\hde\hde64.c">
+    <ClCompile Include="third_party\ViGEmClient\src\ViGEmClient.cpp">
       <Filter>Third Party</Filter>
     </ClCompile>
   </ItemGroup>
@@ -77,11 +62,8 @@
     <ClInclude Include="GipSyntheticEx.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="GipSyntheticEx\GipSyntheticHooks.h">
-      <Filter>Third Party</Filter>
-    </ClInclude>
-    <ClInclude Include="third_party\minhook\include\MinHook.h">
-      <Filter>Third Party</Filter>
+    <ClInclude Include="UsbPort.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

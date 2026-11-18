@@ -102,11 +102,12 @@ std::vector<ControllerConfig> LoadConfig(const std::string& path) {
 		line_number++;
 		if (line_number == 1 && line.compare(0, 3, "\xEF\xBB\xBF") == 0)
 			line.erase(0, 3);
-		size_t comment = line.find_first_of(";#");
+		// # only starts a comment at the start of a line, because port paths contain it
+		size_t comment = line.find(';');
 		if (comment != std::string::npos)
 			line.erase(comment);
 		line = Trim(line);
-		if (line.empty())
+		if (line.empty() || line.front() == '#')
 			continue;
 
 		if (line.front() == '[') {
@@ -143,6 +144,12 @@ std::vector<ControllerConfig> LoadConfig(const std::string& path) {
 			controller.device = value;
 			continue;
 		}
+		if (_stricmp(key.c_str(), "Port") == 0) {
+			if (!controller.port.empty())
+				fail("Port appears twice in [" + controller.name + "]");
+			controller.port = value;
+			continue;
+		}
 
 		const TargetName* target = NULL;
 		for (const TargetName& name : target_names) {
@@ -171,9 +178,11 @@ std::vector<ControllerConfig> LoadConfig(const std::string& path) {
 	if (controllers.empty())
 		throw ConfigError(path + ": no controllers defined");
 	for (const ControllerConfig& controller : controllers) {
-		if (controller.device.empty())
-			throw ConfigError(path + ": [" + controller.name + "] has no Device=");
-		if (controller.mappings.empty())
+		if (controller.device.empty() && controller.port.empty())
+			throw ConfigError(path + ": [" + controller.name + "] has no Device= or Port=");
+		if (controller.device.empty() && !controller.mappings.empty())
+			throw ConfigError(path + ": [" + controller.name + "] maps buttons but has no Device= to read them from");
+		if (!controller.device.empty() && controller.mappings.empty())
 			throw ConfigError(path + ": [" + controller.name + "] has no buttons mapped");
 	}
 	return controllers;

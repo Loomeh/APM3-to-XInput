@@ -7,6 +7,7 @@
 //   Left=X-                                          ; axis direction
 //   Up=Hat:Up                                        ; hat direction
 //   LT=Z                                             ; axis position, triggers only
+//   Port=PCIROOT(0)#PCI(1400)#USBROOT(0)#USB(3)      ; from --ports, optional
 //
 // See APM3-to-XInput.example.ini for everything that can be mapped.
 #include <Windows.h>
@@ -45,7 +46,8 @@ struct InputMapping {
 
 struct ControllerConfig {
 	std::string name;
-	std::string device;
+	std::string device;  // may be empty when there is a port
+	std::string port;    // USB port whose known gamepad is mixed in, may be empty
 	std::vector<InputMapping> mappings;
 };
 

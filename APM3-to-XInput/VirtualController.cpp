@@ -1,21 +1,21 @@
 #include "VirtualController.h"
 
-#include <combaseapi.h>
 #include <stdio.h>
+#include <mutex>
 #include <string>
 
-#include "GipSyntheticEx.h"
-
-// xboxgipsynthetic.dll report type for gamepad input
-#define REPORT_TYPE_GAMEPAD 0
-// xboxgipsynthetic.dll controller type for a standard gamepad
-#define CONTROLLER_TYPE_GAMEPAD 0
-// How long to wait after connecting before any input
-#define SETTLE_TIME_MS 500
+#include <ViGEm/Client.h>
 
 static std::string FormatError(const char* action, int code) {
-	char buffer[128];
-	snprintf(buffer, sizeof(buffer), "%s failed with 0x%08X", action, code);
+	char buffer[256];
+	const char* hint = "";
+	if ((unsigned)code == (unsigned)VIGEM_ERROR_BUS_NOT_FOUND)
+		hint = " (ViGEmBus isn't installed: get it from https://github.com/nefarius/ViGEmBus/releases)";
+	else if ((unsigned)code == (unsigned)VIGEM_ERROR_BUS_VERSION_MISMATCH)
+		hint = " (the installed ViGEmBus is too old, install the latest release)";
+	else if ((unsigned)code == (unsigned)VIGEM_ERROR_NO_FREE_SLOT)
+		hint = " (no free controller slots on ViGEmBus)";
+	snprintf(buffer, sizeof(buffer), "%s failed with 0x%08X%s", action, (unsigned)code, hint);
 	return buffer;
 }
 
@@ -23,37 +23,77 @@ VirtualControllerError::VirtualControllerError(const char* action, int code)
 	: std::runtime_error(FormatError(action, code)), code_(code) {
 }
 
-// The library must only be started once, however many controllers get created
-static void StartLibrary() {
-	// xboxgipsynthetic.dll uses WinRT, including from its own background threads,
-	// so the COM multithreaded apartment has to stay alive for the whole process.
-	// The cookie is deliberately never released.
-	static CO_MTA_USAGE_COOKIE mta_cookie;
-	static const HRESULT mta_result = CoIncrementMTAUsage(&mta_cookie);
-	if (FAILED(mta_result))
-		throw VirtualControllerError("CoIncrementMTAUsage", mta_result);
+// One connection to ViGEmBus is shared by every controller and kept for the whole process
+static PVIGEM_CLIENT Client() {
+	static std::once_flag once;
+	static PVIGEM_CLIENT client = NULL;
+	static VIGEM_ERROR result = VIGEM_ERROR_NONE;
+	std::call_once(once, [] {
+		client = vigem_alloc();
+		if (client == NULL) {
+			result = VIGEM_ERROR_BUS_ACCESS_FAILED;
+			return;
+		}
+		result = vigem_connect(client);
+		if (!VIGEM_SUCCESS(result)) {
+			vigem_free(client);
+			client = NULL;
+		}
+	});
+	if (client == NULL)
+		throw VirtualControllerError("vigem_connect", (int)result);
+	return client;
+}
 
-	static const int result = GipSynthEx_Startup();
-	if (result != GIPSYNTHEX_STARTED_SUCCESSFULLY && result != GIPSYNTHEX_STARTED_WITHOUT_CONNECTEX)
-		throw VirtualControllerError("GipSynthEx_Startup", result);
+// GamepadState keeps the Xbox One button bits the rest of the program uses;
+// ViGEm's Xbox 360 pad wants the XUSB layout instead
+static XUSB_REPORT ToXusb(const GamepadState& state) {
+	static const struct { Button from; USHORT to; } buttons[] = {
+		{ Button::Up,    XUSB_GAMEPAD_DPAD_UP },
+		{ Button::Down,  XUSB_GAMEPAD_DPAD_DOWN },
+		{ Button::Left,  XUSB_GAMEPAD_DPAD_LEFT },
+		{ Button::Right, XUSB_GAMEPAD_DPAD_RIGHT },
+		{ Button::Menu,  XUSB_GAMEPAD_START },
+		{ Button::View,  XUSB_GAMEPAD_BACK },
+		{ Button::LS,    XUSB_GAMEPAD_LEFT_THUMB },
+		{ Button::RS,    XUSB_GAMEPAD_RIGHT_THUMB },
+		{ Button::LB,    XUSB_GAMEPAD_LEFT_SHOULDER },
+		{ Button::RB,    XUSB_GAMEPAD_RIGHT_SHOULDER },
+		{ Button::A,     XUSB_GAMEPAD_A },
+		{ Button::B,     XUSB_GAMEPAD_B },
+		{ Button::X,     XUSB_GAMEPAD_X },
+		{ Button::Y,     XUSB_GAMEPAD_Y },
+	};
+	XUSB_REPORT report = {};
+	for (const auto& b : buttons) {
+		if ((USHORT)(state.buttons & b.from) != 0)
+			report.wButtons |= b.to;
+	}
+	report.bLeftTrigger = (BYTE)(state.left_trigger >> 8);
+	report.bRightTrigger = (BYTE)(state.right_trigger >> 8);
+	report.sThumbLX = state.left_x;
+	report.sThumbLY = state.left_y;
+	report.sThumbRX = state.right_x;
+	report.sThumbRY = state.right_y;
+	return report;
 }
 
 VirtualController::VirtualController() {
-	StartLibrary();
+	PVIGEM_CLIENT client = Client();
 
-	int rval = GipSynthEx_CreateController(CONTROLLER_TYPE_GAMEPAD, &handle_);
-	if (rval != 0)
-		throw VirtualControllerError("GipSynthEx_CreateController", rval);
+	PVIGEM_TARGET target = vigem_target_x360_alloc();
+	if (target == NULL)
+		throw VirtualControllerError("vigem_target_x360_alloc", (int)VIGEM_ERROR_INVALID_TARGET);
 
-	rval = GipSynthEx_Connect(handle_);
-	if (rval != 0) {
-		GipSynthEx_RemoveController(handle_);
-		throw VirtualControllerError("GipSynthEx_Connect", rval);
+	VIGEM_ERROR result = vigem_target_add(client, target);
+	if (!VIGEM_SUCCESS(result)) {
+		vigem_target_free(target);
+		throw VirtualControllerError("vigem_target_add", (int)result);
 	}
+	target_ = target;
 	open_ = true;
 
-	// Sending a report before Windows has finished registering the controller
-	// usually crashes the process, and there is no way to ask if it's ready yet.
+	// Give Windows a moment to finish setting up the new device before input arrives
 	Sleep(SETTLE_TIME_MS);
 }
 
@@ -62,16 +102,18 @@ VirtualController::~VirtualController() {
 }
 
 VirtualController::VirtualController(VirtualController&& other) noexcept
-	: handle_(other.handle_), open_(other.open_), state_(other.state_) {
+	: target_(other.target_), open_(other.open_), state_(other.state_) {
+	other.target_ = nullptr;
 	other.open_ = false;
 }
 
 VirtualController& VirtualController::operator=(VirtualController&& other) noexcept {
 	if (this != &other) {
 		Close();
-		handle_ = other.handle_;
+		target_ = other.target_;
 		open_ = other.open_;
 		state_ = other.state_;
+		other.target_ = nullptr;
 		other.open_ = false;
 	}
 	return *this;
@@ -82,21 +124,28 @@ void VirtualController::Close() noexcept {
 		return;
 	open_ = false;
 
-	// let go of everything first so nothing stays held down in a game
-	GamepadState neutral;
-	GipSynthEx_SendReport(handle_, REPORT_TYPE_GAMEPAD, (BYTE*)&neutral, sizeof(neutral));
-	GipSynthEx_Disconnect(handle_);
-	GipSynthEx_RemoveController(handle_);
+	PVIGEM_CLIENT client = NULL;
+	try {
+		client = Client();
+	} catch (...) {
+	}
+	PVIGEM_TARGET target = (PVIGEM_TARGET)target_;
+	if (client) {
+		// let go of everything first so nothing stays held down in a game
+		vigem_target_x360_update(client, target, XUSB_REPORT{});
+		vigem_target_remove(client, target);
+	}
+	vigem_target_free(target);
+	target_ = nullptr;
 }
 
 void VirtualController::SetState(const GamepadState& state) {
 	if (!open_)
 		throw VirtualControllerError("SetState on a moved-from controller", E_HANDLE);
 
-	GamepadState report = state;
-	int rval = GipSynthEx_SendReport(handle_, REPORT_TYPE_GAMEPAD, (BYTE*)&report, sizeof(report));
-	if (rval != 0)
-		throw VirtualControllerError("GipSynthEx_SendReport", rval);
+	VIGEM_ERROR result = vigem_target_x360_update(Client(), (PVIGEM_TARGET)target_, ToXusb(state));
+	if (!VIGEM_SUCCESS(result))
+		throw VirtualControllerError("vigem_target_x360_update", (int)result);
 	state_ = state;
 }
 

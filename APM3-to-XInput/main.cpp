@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <memory>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "Config.h"
 #include "ControllerBridge.h"
 #include "HidDevice.h"
+#include "UsbPort.h"
 #include "XInputObserver.h"
 
 static const DWORD ALL_XINPUT_SLOTS = 0xF;
@@ -26,11 +28,15 @@ static BOOL WINAPI OnConsoleEvent(DWORD) {
 	return TRUE;
 }
 
-static std::string DefaultConfigPath() {
+static std::string ExePath() {
 	char path[MAX_PATH];
 	GetModuleFileNameA(NULL, path, MAX_PATH);
-	std::string result = path;
-	return result.substr(0, result.find_last_of('.')) + ".ini";
+	return path;
+}
+
+static std::string DefaultConfigPath() {
+	std::string exe = ExePath();
+	return exe.substr(0, exe.find_last_of('.')) + ".ini";
 }
 
 static bool WaitForNewSlot(XInputObserver& observer, DWORD slots_before) {
@@ -55,8 +61,34 @@ static int RunList() {
 	return 0;
 }
 
+// Prints the port of every USB device plugged in until Ctrl+C
+static int RunPorts() {
+	printf("Plug a device into a USB port to see the Port= line for it. Press Ctrl+C to stop.\n\n");
+	std::set<std::string> seen;
+	for (const UsbDeviceInfo& device : ListUsbDevices())
+		seen.insert(device.instance_id);
+	while (!stop_requested) {
+		Sleep(250);
+		std::set<std::string> present;
+		for (const UsbDeviceInfo& device : ListUsbDevices()) {
+			present.insert(device.instance_id);
+			if (seen.count(device.instance_id) == 0)
+				printf("%s\n  Port=%s\n\n", device.name.c_str(), device.port.c_str());
+		}
+		seen.swap(present);
+	}
+	return 0;
+}
+
 static int Run(const std::string& config_path) {
 	std::vector<ControllerConfig> configs = LoadConfig(config_path);
+	for (const ControllerConfig& config : configs) {
+		if (!config.port.empty()) {
+			std::string exe = ExePath();
+			StartGamepads(exe.substr(0, exe.find_last_of('\\') + 1) + "gamecontrollerdb.txt");
+			break;
+		}
+	}
 
 	// Windows can report success for a controller that never shows up, so go and look.
 	// This process can't use XInput, so the observer is only kept around for startup.
@@ -100,10 +132,12 @@ int main(int argc, char** argv) {
 	try {
 		if (argc > 1 && strcmp(argv[1], "--list") == 0)
 			result = RunList();
+		else if (argc > 1 && strcmp(argv[1], "--ports") == 0)
+			result = RunPorts();
 		else if (argc > 2 && strcmp(argv[1], "--config") == 0)
 			result = Run(argv[2]);
 		else if (argc > 1)
-			printf("Usage: APM3-to-XInput [--list | --config <file>]\n");
+			printf("Usage: APM3-to-XInput [--list | --ports | --config <file>]\n");
 		else
 			result = Run(DefaultConfigPath());
 	} catch (const std::exception& error) {

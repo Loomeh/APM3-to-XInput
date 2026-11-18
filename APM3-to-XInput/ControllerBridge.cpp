@@ -5,15 +5,39 @@
 #include <string.h>
 #include <timeapi.h>
 
+#include <SDL3/SDL.h>
+
 #include <algorithm>
+
+#include "UsbPort.h"
 
 #pragma comment(lib, "winmm.lib")
 
 static const ULONGLONG RECONNECT_INTERVAL_MS = 1000;
 static const LONGLONG POLL_INTERVAL_100NS = 10000;
 
+// SDL names buttons by position, so a Nintendo B (the bottom one) becomes A
+static const struct {
+	SDL_GamepadButton from;
+	Button to;
+} gamepad_buttons[] = {
+	{ SDL_GAMEPAD_BUTTON_SOUTH, Button::A }, { SDL_GAMEPAD_BUTTON_EAST, Button::B },
+	{ SDL_GAMEPAD_BUTTON_WEST, Button::X }, { SDL_GAMEPAD_BUTTON_NORTH, Button::Y },
+	{ SDL_GAMEPAD_BUTTON_LEFT_SHOULDER, Button::LB }, { SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, Button::RB },
+	{ SDL_GAMEPAD_BUTTON_LEFT_STICK, Button::LS }, { SDL_GAMEPAD_BUTTON_RIGHT_STICK, Button::RS },
+	{ SDL_GAMEPAD_BUTTON_DPAD_UP, Button::Up }, { SDL_GAMEPAD_BUTTON_DPAD_DOWN, Button::Down },
+	{ SDL_GAMEPAD_BUTTON_DPAD_LEFT, Button::Left }, { SDL_GAMEPAD_BUTTON_DPAD_RIGHT, Button::Right },
+	{ SDL_GAMEPAD_BUTTON_START, Button::Menu }, { SDL_GAMEPAD_BUTTON_BACK, Button::View },
+};
+
 ControllerBridge::ControllerBridge(const ControllerConfig& config) : config_(config) {
-	Connect();
+	if (!config_.device.empty())
+		Connect();
+}
+
+ControllerBridge::~ControllerBridge() {
+	if (gamepad_ != nullptr)
+		SDL_CloseGamepad(gamepad_);
 }
 
 // Finds which report carries each mapped input, and fails if the device doesn't have it
@@ -150,7 +174,20 @@ void ControllerBridge::Apply(const BYTE* report, ULONG length) {
 			bound.active = AxisActive(value, bound.minimum, bound.maximum, source.direction);
 		}
 	}
+	Send();
+}
 
+// SDL's sticks have down as positive, XInput's have up
+static SHORT FlipY(Sint16 value) {
+	return (SHORT)(std::min)(-(int)value, 32767);
+}
+
+// SDL's triggers go from 0 to 32767
+static USHORT TriggerAmount(Sint16 value) {
+	return (USHORT)((std::max)(0, (int)value) * 65535 / 32767);
+}
+
+void ControllerBridge::Send() {
 	GamepadState state;
 	for (const BoundMapping& bound : bound_) {
 		if (!bound.active)
@@ -161,30 +198,79 @@ void ControllerBridge::Apply(const BYTE* report, ULONG length) {
 		if (bound.mapping.right_trigger)
 			state.right_trigger = bound.trigger_amount;
 	}
+
+	// Both sources are mixed: buttons held on either count, the most pulled trigger wins
+	if (gamepad_ != nullptr) {
+		for (const auto& button : gamepad_buttons) {
+			if (SDL_GetGamepadButton(gamepad_, button.from))
+				state.buttons = state.buttons | button.to;
+		}
+		state.left_trigger = (std::max)(state.left_trigger, TriggerAmount(SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)));
+		state.right_trigger = (std::max)(state.right_trigger, TriggerAmount(SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER)));
+		state.left_x = SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_LEFTX);
+		state.left_y = FlipY(SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_LEFTY));
+		state.right_x = SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_RIGHTX);
+		state.right_y = FlipY(SDL_GetGamepadAxis(gamepad_, SDL_GAMEPAD_AXIS_RIGHTY));
+	}
+
 	if (memcmp(&state, &pad_.GetState(), sizeof(state)) != 0)
 		pad_.SetState(state);
 }
 
+void ControllerBridge::JoystickAdded(SDL_JoystickID id, const std::string& port) {
+	if (gamepad_ != nullptr || config_.port.empty() || _stricmp(port.c_str(), config_.port.c_str()) != 0)
+		return;
+	const char* name = SDL_GetJoystickNameForID(id);
+	if (name == NULL)
+		name = "(no name)";
+	if (!SDL_IsGamepad(id)) {
+		printf("[%s] Ignoring %s on %s, it isn't a known controller\n", config_.name.c_str(), name, config_.port.c_str());
+		return;
+	}
+	gamepad_ = SDL_OpenGamepad(id);
+	if (gamepad_ == nullptr)
+		printf("[%s] Could not open %s: %s\n", config_.name.c_str(), name, SDL_GetError());
+	else
+		printf("[%s] Reading %s on %s\n", config_.name.c_str(), name, config_.port.c_str());
+}
+
 void ControllerBridge::Poll() {
-	if (device_ == nullptr) {
-		if (GetTickCount64() >= next_connect_)
-			Connect();
-		if (device_ == nullptr)
-			return;
+	if (gamepad_ != nullptr && !SDL_GamepadConnected(gamepad_)) {
+		printf("[%s] Gamepad unplugged from %s\n", config_.name.c_str(), config_.port.c_str());
+		SDL_CloseGamepad(gamepad_);
+		gamepad_ = nullptr;
 	}
 
-	try {
-		const BYTE* report;
-		ULONG length;
-		while (device_->NextReport(&report, &length))
-			Apply(report, length);
-	} catch (const HidError& error) {
-		printf("[%s] %s. Releasing everything until it comes back.\n", config_.name.c_str(), error.what());
-		device_.reset();
-		pad_.Reset();
-		next_connect_ = GetTickCount64() + RECONNECT_INTERVAL_MS;
-		reported_missing_ = true;
+	if (device_ == nullptr && !config_.device.empty() && GetTickCount64() >= next_connect_)
+		Connect();
+	if (device_ != nullptr) {
+		try {
+			const BYTE* report;
+			ULONG length;
+			while (device_->NextReport(&report, &length))
+				Apply(report, length);
+		} catch (const HidError& error) {
+			printf("[%s] %s. Releasing its inputs until it comes back.\n", config_.name.c_str(), error.what());
+			device_.reset();
+			bound_.clear();
+			next_connect_ = GetTickCount64() + RECONNECT_INTERVAL_MS;
+			reported_missing_ = true;
+		}
 	}
+	Send();
+}
+
+void StartGamepads(const std::string& mappings_path) {
+	SDL_SetHint(SDL_HINT_NO_SIGNAL_HANDLERS, "1");  // otherwise Ctrl+C never reaches main's handler
+	SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");  // a game will have the focus
+	// Xbox controllers report both triggers on one shared HID axis. Raw input gives them a
+	// device path to find their port by, and takes separate triggers from XInput. Other
+	// controllers, PlayStation ones included, have separate trigger axes of their own.
+	SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "1");
+	if (!SDL_Init(SDL_INIT_GAMEPAD))
+		throw std::runtime_error(std::string("Could not start SDL: ") + SDL_GetError());
+	if (SDL_AddGamepadMappingsFromFile(mappings_path.c_str()) < 0)
+		printf("WARNING: could not read %s (%s), only controllers SDL knows by itself will be used\n", mappings_path.c_str(), SDL_GetError());
 }
 
 void RunPollLoop(const std::vector<std::unique_ptr<ControllerBridge>>& bridges, const std::atomic<bool>& stop) {
@@ -200,7 +286,17 @@ void RunPollLoop(const std::vector<std::unique_ptr<ControllerBridge>>& bridges, 
 		timeBeginPeriod(1);
 	}
 
+	const bool gamepads = SDL_WasInit(SDL_INIT_GAMEPAD) != 0;
 	while (!stop) {
+		// Also updates SDL's gamepad state, which Poll reads
+		SDL_Event event;
+		while (gamepads && SDL_PollEvent(&event)) {
+			if (event.type != SDL_EVENT_JOYSTICK_ADDED)
+				continue;
+			std::string port = UsbPortOfInterface(SDL_GetJoystickPathForID(event.jdevice.which));
+			for (const std::unique_ptr<ControllerBridge>& bridge : bridges)
+				bridge->JoystickAdded(event.jdevice.which, port);
+		}
 		for (const std::unique_ptr<ControllerBridge>& bridge : bridges)
 			bridge->Poll();
 		if (timer) {

@@ -73,6 +73,10 @@
     </ImportGroup>
 
   <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Label="Vcpkg">
+    <!-- SDL3 comes from vcpkg.json; needs "vcpkg integrate install" run once -->
+    <VcpkgEnableManifest>true</VcpkgEnableManifest>
+  </PropertyGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -145,7 +149,7 @@
 
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalIncludeDirectories>$(ProjectDir)third_party\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)third_party\ViGEmClient\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <!-- xboxgipsynthetic.dll only works from an elevated process -->
@@ -159,13 +163,8 @@
     <ClCompile Include="ControllerBridge.cpp" />
     <ClCompile Include="XInputObserver.cpp" />
     <ClCompile Include="VirtualController.cpp" />
-    <ClCompile Include="GipSyntheticEx\ExportedAPI.cpp" />
-    <ClCompile Include="GipSyntheticEx\GipSyntheticHooks.cpp" />
-    <ClCompile Include="third_party\minhook\src\buffer.c" />
-    <ClCompile Include="third_party\minhook\src\hook.c" />
-    <ClCompile Include="third_party\minhook\src\trampoline.c" />
-    <ClCompile Include="third_party\minhook\src\hde\hde32.c" />
-    <ClCompile Include="third_party\minhook\src\hde\hde64.c" />
+    <ClCompile Include="UsbPort.cpp" />
+    <ClCompile Include="third_party\ViGEmClient\src\ViGEmClient.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="VirtualController.h" />
@@ -173,12 +172,16 @@
     <ClInclude Include="HidDevice.h" />
     <ClInclude Include="ControllerBridge.h" />
     <ClInclude Include="XInputObserver.h" />
+    <ClInclude Include="UsbPort.h" />
     <ClInclude Include="GipSyntheticEx.h" />
-    <ClInclude Include="GipSyntheticEx\GipSyntheticHooks.h" />
-    <ClInclude Include="third_party\minhook\include\MinHook.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="APM3-to-XInput.example.ini" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Needed next to the exe -->
+    <CopyFileToFolders Include="..\gamecontrollerdb.txt" />
+    <CopyFileToFolders Include="..\ports.bat" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
